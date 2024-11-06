@@ -51,6 +51,8 @@ public class TemporalLoadBalancer
 
     public void WaitForTask(IEnumerator taskCoroutine)
     {
+        if (taskCoroutine == null) return;
+        
         Debug.Assert(tasks.Contains(taskCoroutine));
 
         while (taskCoroutine.MoveNext())

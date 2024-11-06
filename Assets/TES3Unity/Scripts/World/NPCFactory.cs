@@ -6,7 +6,8 @@ namespace TES3Unity.World
 {
     public static class NPCFactory
     {
-        public static GameObject InstanciateNPC(NIFManager nifManager, NPC_Record npc, bool firstPerson = false, bool fixPosition = true)
+        public static GameObject InstanciateNPC(NIFManager nifManager, NPC_Record npc, bool firstPerson = false,
+            bool fixPosition = true)
         {
             var beast = npc.Race == "Argonian" || npc.Race == "Khajiit";
             var female = Utils.ContainsBitFlags((uint)npc.Flags, (uint)NPCFlags.Female);
@@ -98,6 +99,7 @@ namespace TES3Unity.World
 
             // This part is hacky..
             var chest = AddBodyPart(nifManager, skins, boneMapping["Chest"]);
+            if (chest == null) return npcObj;
             if (npc.Race == "Dark Elf")
             {
                 if (female)
@@ -130,20 +132,31 @@ namespace TES3Unity.World
             }
             else if (!firstPerson)
             {
-                var leftHand = chest.Find("Bip01 Pelvis/Bip01 Spine/Bip01 Spine1/Bip01 Spine2/Bip01 Neck/Bip01 L Clavicle/Bip01 L UpperArm/Left Hand");
+                var leftHand =
+                    chest.Find(
+                        "Bip01 Pelvis/Bip01 Spine/Bip01 Spine1/Bip01 Spine2/Bip01 Neck/Bip01 L Clavicle/Bip01 L UpperArm/Left Hand");
                 InvertXScale(leftHand);
                 leftHand.SetParent(boneMapping["Left Hand"], false);
 
-                var rightHand = chest.Find("Bip01 Pelvis/Bip01 Spine/Bip01 Spine1/Bip01 Spine2/Bip01 Neck/Bip01 R Clavicle/Bip01 R UpperArm/Right Hand");
+                var rightHand =
+                    chest.Find(
+                        "Bip01 Pelvis/Bip01 Spine/Bip01 Spine1/Bip01 Spine2/Bip01 Neck/Bip01 R Clavicle/Bip01 R UpperArm/Right Hand");
                 rightHand.SetParent(boneMapping["Right Hand"], false);
             }
 
             return npcObj;
         }
 
-        public static Transform AddBodyPart(NIFManager nifManager, string path, Transform parent, bool invertXScale = false)
+        public static Transform AddBodyPart(NIFManager nifManager, string path, Transform parent,
+            bool invertXScale = false)
         {
             var part = nifManager.InstantiateNIF($"meshes\\{path}", false);
+            if (part == null)
+            {
+                Debug.LogWarning($"Can't instanciate {path} because it was not found!");
+                return null;
+            }
+
             var partTransform = part.transform;
 
             if (invertXScale)
@@ -156,7 +169,7 @@ namespace TES3Unity.World
             return partTransform;
         }
 
-        public static void InvertXScale(Transform part)
+        private static void InvertXScale(Transform part)
         {
             var position = part.localPosition;
             var rotation = part.localRotation.eulerAngles;

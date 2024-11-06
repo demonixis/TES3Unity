@@ -17,7 +17,8 @@ namespace TES3Unity
         public readonly CELLRecord CellRecord;
         public readonly IEnumerator ObjectsCreationCoroutine;
 
-        public InRangeCellInfo(GameObject gameObject, GameObject objectsContainerGameObject, CELLRecord cellRecord, IEnumerator objectsCreationCoroutine)
+        public InRangeCellInfo(GameObject gameObject, GameObject objectsContainerGameObject, CELLRecord cellRecord,
+            IEnumerator objectsCreationCoroutine)
         {
             GameObject = gameObject;
             ObjectsContainerGameObject = objectsContainerGameObject;
@@ -46,8 +47,10 @@ namespace TES3Unity
         private Dictionary<Vector2i, InRangeCellInfo> _cellObjects = new();
         private float _terrainError;
         private float _treeDistance;
-        
-        public CellManager(TES3DataReader reader, TextureManager textureManager, NIFManager nifManager, TemporalLoadBalancer temporalLoadBalancer)
+        private Material _terrainMaterial;
+
+        public CellManager(TES3DataReader reader, TextureManager textureManager, NIFManager nifManager,
+            TemporalLoadBalancer temporalLoadBalancer)
         {
             _dataReader = reader;
             _textureManager = textureManager;
@@ -57,28 +60,24 @@ namespace TES3Unity
             var settings = GameSettings.Get();
             _terrainError = settings.terrainError;
             _treeDistance = settings.treeDistance;
+            _terrainMaterial = Tes3Material.GetTerrainMaterial();
         }
 
         public Vector2i GetExteriorCellIndices(Vector3 point)
         {
-            return new Vector2i(Mathf.FloorToInt(point.x / Convert.ExteriorCellSideLengthInMeters), Mathf.FloorToInt(point.z / Convert.ExteriorCellSideLengthInMeters));
+            return new Vector2i(Mathf.FloorToInt(point.x / Convert.ExteriorCellSideLengthInMeters),
+                Mathf.FloorToInt(point.z / Convert.ExteriorCellSideLengthInMeters));
         }
 
         public InRangeCellInfo StartCreatingExteriorCell(Vector2i cellIndices)
         {
-            var CELL = _dataReader.FindExteriorCellRecord(cellIndices);
+            var cell = _dataReader.FindExteriorCellRecord(cellIndices);
+            if (cell == null) return null;
+            
+            var cellInfo = StartInstantiatingCell(cell);
+            _cellObjects[cellIndices] = cellInfo;
 
-            if (CELL != null)
-            {
-                var cellInfo = StartInstantiatingCell(CELL);
-                _cellObjects[cellIndices] = cellInfo;
-
-                return cellInfo;
-            }
-            else
-            {
-                return null;
-            }
+            return cellInfo;
         }
 
         public void UpdateExteriorCells(Vector3 currentPosition, bool immediate = false, int cellRadiusOverride = -1)
@@ -96,7 +95,8 @@ namespace TES3Unity
 
             foreach (var KVPair in _cellObjects)
             {
-                if ((KVPair.Key.X < minCellX) || (KVPair.Key.X > maxCellX) || (KVPair.Key.Y < minCellY) || (KVPair.Key.Y > maxCellY))
+                if ((KVPair.Key.X < minCellX) || (KVPair.Key.X > maxCellX) || (KVPair.Key.Y < minCellY) ||
+                    (KVPair.Key.Y > maxCellY))
                 {
                     outOfRangeCellIndices.Add(KVPair.Key);
                 }
@@ -162,26 +162,23 @@ namespace TES3Unity
 
         public InRangeCellInfo StartCreatingInteriorCell(string cellName)
         {
-            var CELL = _dataReader.FindInteriorCellRecord(cellName);
-            return StartInstantiatingCell(CELL);
+            var cell = _dataReader.FindInteriorCellRecord(cellName);
+            return StartInstantiatingCell(cell);
         }
 
         public InRangeCellInfo StartCreatingInteriorCell(Vector2i gridCoords)
         {
-            var CELL = _dataReader.FindInteriorCellRecord(gridCoords);
-            return StartInstantiatingCell(CELL);
+            var cell = _dataReader.FindInteriorCellRecord(gridCoords);
+            return StartInstantiatingCell(cell);
         }
 
         public InRangeCellInfo StartCreatingInteriorCell(CELLRecord record)
         {
-            if (record != null)
-            {
-                var cellInfo = StartInstantiatingCell(record);
-                _cellObjects[Vector2i.Zero] = cellInfo;
-                return cellInfo;
-            }
+            if (record == null) return null;
 
-            return null;
+            var cellInfo = StartInstantiatingCell(record);
+            _cellObjects[Vector2i.Zero] = cellInfo;
+            return cellInfo;
         }
 
         public InRangeCellInfo StartInstantiatingCell(CELLRecord CELL)
@@ -207,7 +204,8 @@ namespace TES3Unity
             var cellObjectsContainer = new GameObject("objects");
             cellObjectsContainer.transform.parent = cellObj.transform;
 
-            var cellObjectsCreationCoroutine = InstantiateCellObjectsCoroutine(CELL, LAND, cellObj, cellObjectsContainer);
+            var cellObjectsCreationCoroutine =
+                InstantiateCellObjectsCoroutine(CELL, LAND, cellObj, cellObjectsContainer);
             _temporalLoadBalancer.AddTask(cellObjectsCreationCoroutine);
 
             return new InRangeCellInfo(cellObj, cellObjectsContainer, CELL, cellObjectsCreationCoroutine);
@@ -218,7 +216,7 @@ namespace TES3Unity
             foreach (var keyValuePair in _cellObjects)
             {
                 _temporalLoadBalancer.CancelTask(keyValuePair.Value.ObjectsCreationCoroutine);
-                GameObject.Destroy(keyValuePair.Value.GameObject);
+                Object.Destroy(keyValuePair.Value.GameObject);
             }
 
             _cellObjects.Clear();
@@ -227,17 +225,12 @@ namespace TES3Unity
         /// <summary>
         /// A coroutine that instantiates the terrain for, and all objects in, a cell.
         /// </summary>
-        private IEnumerator InstantiateCellObjectsCoroutine(CELLRecord CELL, LANDRecord LAND, GameObject cellObj, GameObject cellObjectsContainer)
+        private IEnumerator InstantiateCellObjectsCoroutine(CELLRecord CELL, LANDRecord LAND, GameObject cellObj,
+            GameObject cellObjectsContainer)
         {
             if (CELL == null && LAND == null)
             {
                 yield break;
-            }
-
-            // Start pre-loading all required textures for the terrain.
-            if (LAND != null)
-            {
-                GetLANDTextureFilePaths(LAND);
             }
 
             // Extract information about referenced objects.
@@ -246,27 +239,17 @@ namespace TES3Unity
             // Instantiate terrain.
             if (LAND != null)
             {
-                var instantiateLANDTaskEnumerator = InstantiateLANDCoroutine(LAND, cellObj);
-
-                // Run the LAND instantiation coroutine.
-                while (instantiateLANDTaskEnumerator.MoveNext())
-                {
-                    // Yield every time InstantiateLANDCoroutine does to avoid doing too much work in one frame.
-                    yield return null;
-                }
-
+                GetLANDTextureFilePaths(LAND);
+                yield return null;
+                InstantiateLANDCoroutine(LAND, cellObj);
                 yield return null;
             }
 
             // Instantiate objects.
             foreach (var refCellObjInfo in refCellObjInfos)
-            {
                 InstantiateCellObject(CELL, cellObjectsContainer, refCellObjInfo);
-            }
 
             InstantiateReflectionProbe(CELL, cellObj.transform);
-
-            yield return null;
         }
 
         private RefCellObjInfo[] GetRefCellObjInfos(CELLRecord CELL)
@@ -280,7 +263,8 @@ namespace TES3Unity
                 refObjInfo.RefObjDataGroup = CELL.refObjDataGroups[i];
 
                 // Get the record the RefObjDataGroup references.
-                _dataReader.MorrowindESMFile.ObjectsByIDString.TryGetValue(refObjInfo.RefObjDataGroup.NAME.value, out refObjInfo.ReferencedRecord);
+                _dataReader.MorrowindESMFile.ObjectsByIDString.TryGetValue(refObjInfo.RefObjDataGroup.NAME.value,
+                    out refObjInfo.ReferencedRecord);
 
                 if (refObjInfo.ReferencedRecord != null)
                 {
@@ -399,7 +383,8 @@ namespace TES3Unity
             lightComponent.renderMode = LightRenderMode.ForceVertex;
 #endif
 
-            if (!indoors && !config.exteriorLights) // disabling exterior cell lights because there is no day/night cycle
+            if (!indoors &&
+                !config.exteriorLights) // disabling exterior cell lights because there is no day/night cycle
             {
                 lightComponent.enabled = false;
             }
@@ -424,7 +409,8 @@ namespace TES3Unity
             gameObject.transform.rotation *= NIFUtils.NifEulerAnglesToUnityQuaternion(refObjDataGroup.DATA.eulerAngles);
 
             var tagTarget = gameObject;
-            var coll = gameObject.GetComponentInChildren<Collider>(); // if the collider is on a child object and not on the object with the component, we need to set that object's tag instead.
+            var coll = gameObject.GetComponentInChildren<Collider>();
+            // if the collider is on a child object and not on the object with the component, we need to set that object's tag instead.
             if (coll != null)
             {
                 tagTarget = coll.gameObject;
@@ -449,7 +435,8 @@ namespace TES3Unity
             ProcessObjectType<NPC_Record>(tagTarget, refCellObjInfo, "NPC");
         }
 
-        private void ProcessObjectType<RecordType>(GameObject gameObject, RefCellObjInfo info, string tag) where RecordType : Record
+        private void ProcessObjectType<RecordType>(GameObject gameObject, RefCellObjInfo info, string tag)
+            where RecordType : Record
         {
             var record = info.ReferencedRecord;
             if (record is RecordType)
@@ -506,7 +493,7 @@ namespace TES3Unity
         /// <summary>
         /// Creates terrain representing a LAND record.
         /// </summary>
-        private IEnumerator InstantiateLANDCoroutine(LANDRecord LAND, GameObject parent)
+        private void InstantiateLANDCoroutine(LANDRecord LAND, GameObject parent)
         {
             Debug.Assert(LAND != null);
 
@@ -515,10 +502,7 @@ namespace TES3Unity
             var textureIndice = LAND.VertexIndiceData;
 
             // Don't create anything if the LAND doesn't have height data.
-            if (heightOffsets == null)
-            {
-                yield break;
-            }
+            if (heightOffsets == null) return;
 
             const int LAND_SIDE_LENGTH_IN_SAMPLES = 65;
             var heights = new float[LAND_SIDE_LENGTH_IN_SAMPLES, LAND_SIDE_LENGTH_IN_SAMPLES];
@@ -589,11 +573,13 @@ namespace TES3Unity
                     if (!TerrainLayers.ContainsKey(texture))
                     {
                         // Create the splat prototype.
-                        splat = new TerrainLayer();
-                        splat.diffuseTexture = texture;
-                        splat.smoothness = 0.3f;
-                        splat.metallic = 0.2f;
-                        splat.specular = Color.black;
+                        splat = new TerrainLayer
+                        {
+                            diffuseTexture = texture,
+                            smoothness = 0.3f,
+                            metallic = 0.2f,
+                            specular = Color.black,
+                        };
                         splat.maskMapTexture = TextureManager.CreateMaskTexture(splat.metallic, 0, 0, splat.smoothness);
 
                         if (!GameSettings.Get().lowQualityShader)
@@ -619,8 +605,6 @@ namespace TES3Unity
 
             splatPrototypes = splatPrototypeList.ToArray();
 
-            yield return null;
-
             // Create the alpha map.
             int VTEX_ROWS = 16;
             int VTEX_COLUMNS = VTEX_ROWS;
@@ -636,7 +620,8 @@ namespace TES3Unity
                     var xMajor = x / 4;
                     var xMinor = x - (xMajor * 4);
 
-                    var texIndex = (short)((short)textureIndices[(yMajor * 64) + (xMajor * 16) + (yMinor * 4) + xMinor] - 1);
+                    var texIndex =
+                        (short)((short)textureIndices[(yMajor * 64) + (xMajor * 16) + (yMinor * 4) + xMinor] - 1);
 
                     if (texIndex >= 0)
                     {
@@ -652,33 +637,30 @@ namespace TES3Unity
             }
 
             // Create the terrain.
-            var settings = GameSettings.Get();
             var gridCoords = LAND.GridCoords;
             var heightRange = maxHeight - minHeight;
-            var terrainPosition = new Vector3(Convert.ExteriorCellSideLengthInMeters * gridCoords.X, minHeight / Convert.MeterInMWUnits, Convert.ExteriorCellSideLengthInMeters * gridCoords.Y);
+            var terrainPosition = new Vector3(Convert.ExteriorCellSideLengthInMeters * gridCoords.X,
+                minHeight / Convert.MeterInMWUnits, Convert.ExteriorCellSideLengthInMeters * gridCoords.Y);
             var heightSampleDistance = Convert.ExteriorCellSideLengthInMeters / (LAND_SIDE_LENGTH_IN_SAMPLES - 1);
-            var terrainGameObject = GameObjectUtils.CreateTerrain(heights, heightRange / Convert.MeterInMWUnits, heightSampleDistance, splatPrototypes, alphaMap, terrainPosition);
+            var terrainGameObject = GameObjectUtils.CreateTerrain(heights, heightRange / Convert.MeterInMWUnits,
+                heightSampleDistance, splatPrototypes, alphaMap, terrainPosition);
+            
             var terrain = terrainGameObject.GetComponent<Terrain>();
-            terrain.materialTemplate = Tes3Material.GetTerrainMaterial();
+            terrain.materialTemplate = _terrainMaterial;
             terrain.heightmapPixelError = _terrainError;
             terrain.treeDistance = _treeDistance;
-            
-            terrainGameObject.transform.parent = parent.transform;
 
-            yield return null;
+            terrainGameObject.transform.parent = parent.transform;
         }
 
         private void InstantiateReflectionProbe(CELLRecord cell, Transform parent)
         {
-            if (cell.isInterior)
-            {
-                // FIXME
-                return;
-            }
+            if (cell.isInterior) return;
 
             var gridCoords = cell.gridCoords;
             //var bounds = GameObjectUtils.CalcVisualBoundsRecursive(parent.gameObject);
-            var position = new Vector3(Convert.ExteriorCellSideLengthInMeters * gridCoords.X, 0, Convert.ExteriorCellSideLengthInMeters * gridCoords.Y);
+            var position = new Vector3(Convert.ExteriorCellSideLengthInMeters * gridCoords.X, 0,
+                Convert.ExteriorCellSideLengthInMeters * gridCoords.Y);
             //var position = bounds.center;
 
             var probe = new GameObject("ReflectionProbe");
@@ -699,7 +681,7 @@ namespace TES3Unity
             if (_cellObjects.TryGetValue(indices, out cellInfo))
             {
                 _temporalLoadBalancer.CancelTask(cellInfo.ObjectsCreationCoroutine);
-                GameObject.Destroy(cellInfo.GameObject);
+                Object.Destroy(cellInfo.GameObject);
                 _cellObjects.Remove(indices);
             }
             else

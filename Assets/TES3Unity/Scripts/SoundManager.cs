@@ -23,7 +23,7 @@ namespace TES3Unity
             
             if (!GameSettings.Get().MusicEnabled) return;
   
-            var songs = Directory.GetFiles(dataPath + "/Music/Explore");
+            var songs = Directory.GetFiles(dataPath + "/Music/Explore", "*.mp3");
 
             if (songs.Length <= 0) return;
             
@@ -42,9 +42,9 @@ namespace TES3Unity
         {
             if (string.IsNullOrEmpty(id)) return null;
 
-            if (AudioClipStore.ContainsKey(id))
+            if (AudioClipStore.TryGetValue(id, out var audioClip))
             {
-                return AudioClipStore[id];
+                return audioClip;
             }
 
             var path = Tes3Engine.DataReader.GetSound(id);
