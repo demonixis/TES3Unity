@@ -1,21 +1,23 @@
 {
   "dependencies": {
     "com.meta.xr.sdk.core": {
-      "version": "69.0.1",
+      "version": "71.0.0",
       "depth": 0,
       "source": "registry",
       "dependencies": {},
       "url": "https://npm.developer.oculus.com"
     },
     "com.meta.xr.simulator": {
-      "version": "69.0.0",
+      "version": "71.0.0",
       "depth": 0,
       "source": "registry",
-      "dependencies": {},
+      "dependencies": {
+        "com.unity.editorcoroutines": "1.0.0"
+      },
       "url": "https://packages.unity.com"
     },
     "com.unity.ai.navigation": {
-      "version": "2.0.4",
+      "version": "2.0.5",
       "depth": 0,
       "source": "registry",
       "dependencies": {
@@ -303,7 +305,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.xr.openxr": {
-      "version": "1.13.0",
+      "version": "1.13.2",
       "depth": 0,
       "source": "registry",
       "dependencies": {
