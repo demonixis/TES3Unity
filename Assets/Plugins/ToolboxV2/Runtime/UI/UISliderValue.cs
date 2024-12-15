@@ -1,6 +1,7 @@
 ﻿using System;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.UI;
 
 namespace Demonixis.ToolboxV2.UI
@@ -8,36 +9,38 @@ namespace Demonixis.ToolboxV2.UI
     [ExecuteInEditMode]
     public sealed class UISliderValue : MonoBehaviour
     {
-        [SerializeField]
-        private Slider m_Slider = null;
-        [SerializeField]
-        private Text m_Label = null;
-        [SerializeField]
-        private string m_Unit = string.Empty;
-        [SerializeField]
-        private int m_Truncate = 0;
+        [FormerlySerializedAs("_slider")] [SerializeField] private Slider slider;
+        [FormerlySerializedAs("_label")] [SerializeField] private Text label;
+        [FormerlySerializedAs("_unit")] [SerializeField] private string unit = string.Empty;
+        [FormerlySerializedAs("_truncate")] [FormerlySerializedAs("m_Truncate")] [SerializeField] private int truncate;
+        [FormerlySerializedAs("m_MinMax")] [SerializeField] private Vector2 minMax = Vector2.zero;
+
+        public event Action<float> ValueChanged;
 
         public bool WholeNumbers
         {
-            get => m_Slider.wholeNumbers;
-            set => m_Slider.wholeNumbers = value;
+            get => slider.wholeNumbers;
+            set => slider.wholeNumbers = value;
         }
-
-        public event Action<float> ValueChanged = null;
 
         public float Value
         {
-            get => m_Slider.value;
+            get => slider.value;
             set
             {
-                m_Slider.SetValueWithoutNotify(value);
+                slider.SetValueWithoutNotify(value);
                 ShowValue(value);
             }
         }
 
         private void Awake()
         {
-            m_Slider.onValueChanged.AddListener(OnValueChanged);
+            slider.onValueChanged.AddListener(OnValueChanged);
+
+            if (minMax != Vector2.zero)
+            {
+                SetMinMax(minMax.x, minMax.y);
+            }
         }
 
         private void Start()
@@ -54,8 +57,8 @@ namespace Demonixis.ToolboxV2.UI
 
         public void SetMinMax(float min, float max)
         {
-            m_Slider.minValue = min;
-            m_Slider.maxValue = max;
+            slider.minValue = min;
+            slider.maxValue = max;
         }
 
         private void OnValueChanged(float value)
@@ -66,23 +69,22 @@ namespace Demonixis.ToolboxV2.UI
 
         private void ShowValue(float value)
         {
-            if (m_Truncate > 0)
+            if (truncate > 0)
             {
-                value = Mathf.Round(value * m_Truncate) / m_Truncate;
+                value = Mathf.Round(value * truncate) / truncate;
             }
 
-            m_Label.text = $"{value}{m_Unit}";
+            label.text = $"{value}{unit}";
         }
 
         private void OnValidate()
         {
-#if UNITY_EDITOR
-            if (m_Label == null)
+            if (label == null)
             {
                 return;
             }
-#endif
-            m_Label.text = $"{m_Slider.value}{m_Unit}";
+
+            label.text = $"{slider.value}{unit}";
         }
     }
 }

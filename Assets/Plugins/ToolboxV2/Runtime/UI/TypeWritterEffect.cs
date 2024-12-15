@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.UI;
@@ -9,117 +8,104 @@ namespace Demonixis.ToolboxV2.UI
     [RequireComponent(typeof(Text))]
     public sealed class TypeWritterEffect : MonoBehaviour
     {
-        private static StringBuilder m_StringBuilder = new StringBuilder();
-        private Text m_Text = null;
-        private int m_Size = 0;
-        private float m_ElaspedTime = 0;
-        private string m_ContentText = string.Empty;
-        private bool m_Done = true;
-        private int m_Index = 0;
-        private List<string> m_ContentTexts = null;
+        private static readonly StringBuilder _stringBuilder = new StringBuilder();
+        private Text _text;
+        private int _size;
+        private float _elaspedTime;
+        private string _contentText = string.Empty;
+        private bool _done = true;
+        private int _index;
 
-        [SerializeField]
-        private float m_CycleDuration = 0.05f;
-        [SerializeField]
-        private int m_LetterPerCycle = 1;
-        [SerializeField]
-        private bool m_AutoStart = false;
-        [SerializeField]
-        private bool m_ActiveOnEnable = false;
+        [SerializeField] private float _cycleDuration = 0.05f;
+        [SerializeField] private int _letterPerCycle = 1;
+        [SerializeField] private bool _autoStart;
+        [SerializeField] private bool _activeOnEnable;
 
         public bool AutoStart
         {
-            get => m_AutoStart;
-            set => m_AutoStart = value;
+            get => _autoStart;
+            set => _autoStart = value;
         }
 
-        public bool IsActive => !m_Done;
-        public float CycleDuration => m_CycleDuration;
-        public int LetterPerCycle => m_LetterPerCycle;
-        public Text Text => m_Text;
+        public bool IsActive => !_done;
 
-        public event Action Completed = null;
+        public float CycleDuration => _cycleDuration;
+
+        public int LetterPerCycle => _letterPerCycle;
+
+        public event Action Completed;
 
         private void OnEnable()
         {
-            EnsureStarted();
-
-            if (m_ActiveOnEnable)
+            if (_activeOnEnable)
             {
-                m_AutoStart = false;
+                _autoStart = false;
                 Begin();
             }
         }
 
         private void Start()
         {
-            EnsureStarted();
-
-            if (m_AutoStart)
+            if (_autoStart)
             {
                 Begin();
             }
         }
 
-        private void EnsureStarted()
-        {
-            if (m_Text != null)
-            {
-                return;
-            }
-
-            m_ContentTexts = new List<string>();
-            m_Text = GetComponent<Text>();
-        }
-
         private void Update()
         {
-            if (!m_Done)
+            if (!_done)
             {
-                m_ElaspedTime += Time.deltaTime;
+                _elaspedTime += Time.deltaTime;
                 UpdateText();
             }
         }
 
         public void Begin(string text = null)
         {
-            EnsureStarted();
+            if (_text == null)
+            {
+                _text = GetComponent<Text>();
+            }
 
-            m_ContentText = text == null ? m_Text.text : text;
-            m_Size = m_ContentText.Length;
-            m_ElaspedTime = m_CycleDuration;
-            m_Index = 0;
-            m_Done = false;
-            m_StringBuilder.Length = 0;
-            m_Text.text = string.Empty;
+            _contentText = text == null ? _text.text : text;
+            _size = _contentText.Length;
+            _elaspedTime = _cycleDuration;
+            _index = 0;
+            _done = false;
+            _stringBuilder.Length = 0;
+            _text.text = string.Empty;
         }
 
         public void Stop()
         {
-            m_ElaspedTime = m_CycleDuration;
-            m_Done = true;
+            _elaspedTime = _cycleDuration;
+            _done = true;
         }
 
         private void UpdateText()
         {
-            if (m_ElaspedTime >= m_CycleDuration)
+            if (_elaspedTime >= _cycleDuration)
             {
-                var limit = Mathf.Min(m_Index + m_LetterPerCycle, m_Size);
+                var limit = Mathf.Min(_index + _letterPerCycle, _size);
 
-                for (int i = m_Index; i < limit; i++)
+                for (int i = _index; i < limit; i++)
                 {
-                    m_StringBuilder.Append(m_ContentText[i]);
+                    _stringBuilder.Append(_contentText[i]);
                 }
 
-                m_Index = limit;
-                m_Text.text = m_StringBuilder.ToString();
-                m_ElaspedTime = 0;
+                _index = limit;
+                _text.text = _stringBuilder.ToString();
+                _elaspedTime = 0;
 
-                if (m_Index >= m_Size)
+                if (_index >= _size)
                 {
-                    m_Done = true;
+                    _done = true;
 
-                    Completed?.Invoke();
+                    if (Completed != null)
+                    {
+                        Completed();
+                    }
                 }
             }
         }
