@@ -16,6 +16,8 @@ using System.Collections.Generic;
 using UnityEngine.XR.Management;
 using System;
 using Demonixis.ToolboxV2.Utils;
+using UnityEngine.XR.OpenXR;
+using UnityEngine.XR.OpenXR.Input;
 
 namespace Demonixis.ToolboxV2.XR
 {
@@ -31,6 +33,7 @@ namespace Demonixis.ToolboxV2.XR
         Pico,
         WaveVR,
         Apple,
+        AndroidXR,
         Unknown
     }
 
@@ -55,6 +58,7 @@ namespace Demonixis.ToolboxV2.XR
         ViveFocus3,
         ViveXRElite,
         AppleVisionPro,
+        AndroidXR,
         Unknown
     }
 
@@ -83,10 +87,8 @@ namespace Demonixis.ToolboxV2.XR
 
         public static bool HandTrackingSupported()
         {
-#if UNITY_EDITOR && UNITY_STANDALONE_WIN
-            return true;
-#elif UNITY_ANDROID
-            return Vendor == XRVendor.Meta || Vendor == XRVendor.Pico;
+#if UNITY_ANDROID || UNITY_EDITOR || UNITY_STANDALONE_WIN
+            return Vendor is XRVendor.Meta or XRVendor.Pico or XRVendor.Apple or XRVendor.AndroidXR;
 #elif UNITY_VISIONOS
             return true;
 #else
@@ -96,7 +98,7 @@ namespace Demonixis.ToolboxV2.XR
 
         public static bool HasMotionControllers()
         {
-            return Headset != XRHeadset.AppleVisionPro;
+            return Headset != XRHeadset.AppleVisionPro && Headset != XRHeadset.AndroidXR;
         }
 
         public static XRVendor GetVendor()
@@ -240,7 +242,7 @@ namespace Demonixis.ToolboxV2.XR
 
         public static void TryInitialize()
         {
-#if UNITY_XR_SUPPORTED && !UNITY_VISIONOS
+#if UNITY_XR_SUPPORTED && !UNITY_VISIONOS && !UNITY_ANDROID
             var manager = XRGeneralSettings.Instance.Manager;
             if (manager == null) return;
             if (manager.activeLoader != null) return;
@@ -252,7 +254,7 @@ namespace Demonixis.ToolboxV2.XR
 
         public static void TryShutdown()
         {
-#if UNITY_XR_SUPPORTED && !UNITY_VISIONOS && !UNITY_EDITOR
+#if UNITY_XR_SUPPORTED && !UNITY_VISIONOS && !UNITY_ANDROID
             var manager = XRGeneralSettings.Instance.Manager;
             if (manager == null) return;
             if (manager.activeLoader == null) return;
@@ -298,10 +300,15 @@ namespace Demonixis.ToolboxV2.XR
             if (name == "meta xr simulator")
                 return XRVendor.Meta;
 #endif
-            
+
             if (name.Contains("oculus"))
             {
                 return XRVendor.Meta;
+            }
+
+            if (name.Contains("android") && name.Contains("xr"))
+            {
+                return XRVendor.AndroidXR;
             }
 
             if (InArray(name, "apple", "vision", "polyspatial"))
@@ -345,11 +352,16 @@ namespace Demonixis.ToolboxV2.XR
                 return XRHeadset.None;
 
             name = name.ToLower();
-            
+
 #if UNITY_EDITOR
             if (name == "meta xr simulator")
                 return XRHeadset.OculusQuest3;
 #endif
+            
+            if (name.Contains("android") && name.Contains("xr"))
+            {
+                return XRHeadset.AndroidXR;
+            }
 
             if (name.Contains("oculus") || name.Contains("meta"))
             {
@@ -376,7 +388,7 @@ namespace Demonixis.ToolboxV2.XR
                     if (name.Contains("2"))
                         return XRHeadset.OculusQuest2;
 
-                    if (name.Contains("3") && name.Contains("s"))
+                    if (name.Contains("3s"))
                         return XRHeadset.OculusQuest3S;
 
                     if (name.Contains("3"))

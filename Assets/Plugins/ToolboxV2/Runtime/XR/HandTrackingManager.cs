@@ -1,6 +1,8 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using Demonixis.ToolboxV2.XR;
 using UnityEngine;
+using UnityEngine.Serialization;
 using UnityEngine.XR.Hands;
 using UnityEngine.XR.Hands.Samples.VisualizerSample;
 #if UNITY_VISIONOS
@@ -16,6 +18,9 @@ namespace Demonixis.ToolboxV2.XR
         {
             Relax,
             Grab,
+            PistolPose,
+            Shoot,
+            Reload,
             PinchIndex,
             PinchMiddle,
             PinchRing,
@@ -39,24 +44,40 @@ namespace Demonixis.ToolboxV2.XR
         private const int MiddleFingerIndex = 2;
         private const int RingFingerIndex = 3;
         private const int LittleFingerIndex = 4;
-
-        private XRHandSubsystem _handSubsystem;
-        private readonly float _pinchThreshold = 0.02f;
+        private const float ThumbHighThreshold = 0.4f;
+        private const float PinchThreshold = 0.02f;
 
         private readonly bool[] _trackingState = new bool[NumHands];
         private readonly float[] _leftFingersValues = new float[NumFingers];
         private readonly float[] _rightFingersValues = new float[NumFingers];
+        private XRHandSubsystem _handSubsystem;
         private Dictionary<HandGestures, bool> _leftGestures;
         private Dictionary<HandGestures, bool> _rightGestures;
         private Transform[] _leftFingerProximals = new Transform[NumFingers];
         private Transform[] _rightFingerProximals = new Transform[NumFingers];
+        private bool _handVisible;
 
-        [SerializeField] private Transform _origin;
-        [SerializeField] private XRHandSkeletonDriver _leftSkeleton;
-        [SerializeField] private XRHandSkeletonDriver _rightSkeleton;
-        [SerializeField] IUILaserPointer _laserPointer;
-        [SerializeField] private GameObject[] _motionControllerGameObjects;
-        [SerializeField] private GameObject[] _handTrackingGameObjects;
+        [FormerlySerializedAs("_origin")] [SerializeField] private Transform origin;
+        [FormerlySerializedAs("_leftSkeleton")] [SerializeField] private XRHandSkeletonDriver leftSkeleton;
+        [FormerlySerializedAs("_rightSkeleton")] [SerializeField] private XRHandSkeletonDriver rightSkeleton;
+        [FormerlySerializedAs("_laserPointer")] [SerializeField] IUILaserPointer laserPointer;
+        [FormerlySerializedAs("_motionControllerGameObjects")] [SerializeField] private GameObject[] motionControllerGameObjects;
+        [FormerlySerializedAs("_handTrackingGameObjects")] [SerializeField] private GameObject[] handTrackingGameObjects;
+
+        public bool HandsVisible
+        {
+            get => _handVisible;
+            set
+            {
+                _handVisible = value;
+                
+#if UNITY_VISIONOS
+                _handVisible = false;
+#endif
+               if (TryGetComponent(out HandVisualizer visualizer));
+                visualizer.drawMeshes = _handVisible;
+            }
+        }
 
         public event Action<bool, bool> HandTrackingEnableChanged;
         public event Action<HandGestures, bool, bool, bool> GestureChanged;
@@ -65,7 +86,7 @@ namespace Demonixis.ToolboxV2.XR
         {
             return _trackingState[left ? 0 : 1];
         }
-
+        
         private void EnsureStarted()
         {
             if (_leftGestures != null) return;
@@ -80,24 +101,19 @@ namespace Demonixis.ToolboxV2.XR
             _leftGestures = InitializeGestureArray();
             _rightGestures = InitializeGestureArray();
 
-            var joins = _leftSkeleton.jointTransformReferences;
+            var joins = leftSkeleton.jointTransformReferences;
             PopulateFingers(ref _leftFingerProximals, joins);
 
-            joins = _rightSkeleton.jointTransformReferences;
+            joins = rightSkeleton.jointTransformReferences;
             PopulateFingers(ref _rightFingerProximals, joins);
 
-            var showHands = true;
 #if UNITY_VISIONOS
-            showHands = false;
-#endif
-            var visualizer = GetComponent<HandVisualizer>();
-            visualizer.drawMeshes = showHands;
-
-#if !UNITY_VISIONOS
-            var leftEvent = _leftSkeleton.GetComponent<XRHandTrackingEvents>();
+            HandsVisible = false;
+#else
+            var leftEvent = leftSkeleton.GetComponent<XRHandTrackingEvents>();
             leftEvent.trackingChanged.AddListener(OnLeftHandTrackingChanged);
 
-            var rightEvent = _rightSkeleton.GetComponent<XRHandTrackingEvents>();
+            var rightEvent = rightSkeleton.GetComponent<XRHandTrackingEvents>();
             rightEvent.trackingChanged.AddListener(OnRightHandTrackingChanged);
 #endif
         }
@@ -143,13 +159,13 @@ namespace Demonixis.ToolboxV2.XR
             var index = leftHand ? 0 : 1;
 
             _trackingState[index] = tracked;
-            _motionControllerGameObjects[index].SetActive(!tracked);
-            _handTrackingGameObjects[index].SetActive(tracked);
+            motionControllerGameObjects[index].SetActive(!tracked);
+            handTrackingGameObjects[index].SetActive(tracked);
 
             if (!leftHand)
             {
-                _laserPointer.AllowExternalPressInput = tracked;
-                _laserPointer.ExternalPressInputValue = false;
+                laserPointer.AllowExternalPressInput = tracked;
+                laserPointer.ExternalPressInputValue = false;
             }
 
             HandTrackingEnableChanged?.Invoke(leftHand, tracked);
@@ -161,9 +177,9 @@ namespace Demonixis.ToolboxV2.XR
             GestureChanged?.Invoke(gestures, leftHand, previewGestureState, newGestureState);
         }
 
-        private bool CheckGesture(HandGestures gestures, ref float[] array)
+        private bool CheckGesture(HandGestures gesture, ref float[] array)
         {
-            if (gestures == HandGestures.Relax)
+            if (gesture == HandGestures.Relax)
             {
                 // Don't take the Thumb
                 for (var i = IndexFingerIndex; i < array.Length; i++)
@@ -175,7 +191,7 @@ namespace Demonixis.ToolboxV2.XR
                 return true;
             }
 
-            if (gestures == HandGestures.Grab)
+            if (gesture == HandGestures.Grab)
             {
                 // Don't take the Thumb
                 for (var i = IndexFingerIndex; i <= MiddleFingerIndex; i++)
@@ -185,6 +201,28 @@ namespace Demonixis.ToolboxV2.XR
                 }
 
                 return true;
+            }
+            
+            if (gesture == HandGestures.PistolPose)
+            {
+                // Only Middle + Ring to prevent bad detection of Pinky
+                for (var i = MiddleFingerIndex; i < array.Length - 1; i++)
+                {
+                    if (array[i] < HighThreshold)
+                        return false;
+                }
+
+                return true;
+            }
+
+            if (gesture == HandGestures.Shoot)
+            {
+                return array[IndexFingerIndex] >= HighThreshold;
+            }
+
+            if (gesture == HandGestures.Reload)
+            {
+                return array[ThumbFingerIndex] >= ThumbHighThreshold;
             }
 
             return false;
@@ -209,11 +247,11 @@ namespace Demonixis.ToolboxV2.XR
             var thumbTip = hand.GetJoint(XRHandJointID.ThumbTip);
             var indexTip = hand.GetJoint(indexJoint);
 
-            if (TryToWorldPose(thumbTip, _origin, out var thumbPos) &&
-                TryToWorldPose(indexTip, _origin, out var indexPos))
+            if (TryToWorldPose(thumbTip, origin, out var thumbPos) &&
+                TryToWorldPose(indexTip, origin, out var indexPos))
             {
                 var distance = Vector3.Distance(thumbPos, indexPos);
-                if (distance < _pinchThreshold)
+                if (distance < PinchThreshold)
                 {
                     return true;
                 }
@@ -234,23 +272,7 @@ namespace Demonixis.ToolboxV2.XR
             result = Vector3.zero;
             return false;
         }
-
-        public bool TryToWorldPose(XRHandJoint joint, Transform origin, out Vector3 position, out Quaternion rotation)
-        {
-            var xrOriginPose = new Pose(origin.position, origin.rotation);
-            if (joint.TryGetPose(out Pose jointPose))
-            {
-                var pose = jointPose.GetTransformedBy(xrOriginPose);
-                position = pose.position;
-                rotation = pose.rotation;
-                return true;
-            }
-
-            position = Vector3.zero;
-            rotation = Quaternion.identity;
-            return false;
-        }
-
+        
         private void TryCheckGesturesForHand(bool left)
         {
             if (!_trackingState[left ? 0 : 1]) return;
@@ -289,6 +311,39 @@ namespace Demonixis.ToolboxV2.XR
                 gestureArray[HandGestures.Grab] = newGrabGesture;
                 OnGestureChanged(HandGestures.Grab, left, oldGrabGesture, newGrabGesture);
             }
+            
+            // Pistol
+            var newGunGesture = CheckGesture(HandGestures.PistolPose, ref fingerValues);
+            var oldGunGesture = gestureArray[HandGestures.PistolPose];
+            if (newGunGesture != oldGunGesture)
+            {
+                gestureArray[HandGestures.PistolPose] = newGunGesture;
+                OnGestureChanged(HandGestures.PistolPose, left, oldGunGesture, newGunGesture);
+            }
+            
+            // Shoot
+            var newShootGesture = CheckGesture(HandGestures.Shoot, ref fingerValues);
+            var oldShootGesture = gestureArray[HandGestures.Shoot];
+            if (newShootGesture != oldShootGesture)
+            {
+                gestureArray[HandGestures.Shoot] = newShootGesture;
+
+                // Gun Pose Required
+                if (gestureArray[HandGestures.PistolPose])
+                    OnGestureChanged(HandGestures.Shoot, left, oldShootGesture, newShootGesture);
+            }
+            
+            // Reload
+            var newReloadGesture = CheckGesture(HandGestures.Reload, ref fingerValues);
+            var oldReloadGesture = gestureArray[HandGestures.Reload];
+            if (newReloadGesture != oldReloadGesture)
+            {
+                gestureArray[HandGestures.Reload] = newReloadGesture;
+
+                // Gun Pose Required
+                if (gestureArray[HandGestures.PistolPose])
+                    OnGestureChanged(HandGestures.Reload, left, oldReloadGesture, newReloadGesture);
+            }
 
             // Pinch
             CheckPinch(left, FingerPinch.Index);
@@ -318,11 +373,11 @@ namespace Demonixis.ToolboxV2.XR
 
                 if (pinchTarget == FingerPinch.Index && !left && newPinchGesture)
                 {
-                    _laserPointer.ExternalPressInputValue = true;
+                    laserPointer.ExternalPressInputValue = true;
                 }
             }
         }
-
+        
         private static Dictionary<HandGestures, bool> InitializeGestureArray()
         {
             var names = Enum.GetNames(typeof(HandGestures));

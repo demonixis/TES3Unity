@@ -9,6 +9,13 @@ namespace Wacki
 {
     public sealed class IUILaserPointer : MonoBehaviour
     {
+        public enum AutoInitializeModes
+        {
+            None,
+            InitAndHide,
+            InitAndShow
+        }
+
         private GameObject _hitPoint;
         private GameObject _pointer;
         private float _distanceLimit;
@@ -19,15 +26,14 @@ namespace Wacki
         private bool _ready;
         private bool _inputReading;
 
-        [Header("Setup")] [SerializeField] private float m_LaserThickness = 0.002f;
-        [SerializeField] private float m_LaserHitScale = 0.02f;
-        [SerializeField] private Color m_Color = Color.blue;
-        [SerializeField] private Material m_LaserMaterial;
-        [SerializeField] private bool m_AutoInitialize;
-        [SerializeField] private bool m_ForceLaserHidden;
-        [SerializeField] private bool _visionOsDisabled;
-
-        [Header("Input")] [SerializeField] private InputAction m_PressAction;
+        [SerializeField] private float laserThickness = 0.002f;
+        [SerializeField] private float laserHitScale = 0.02f;
+        [SerializeField] private Color color = Color.blue;
+        [SerializeField] private Material laserMaterial;
+        [SerializeField] private AutoInitializeModes autoInitializeMode = AutoInitializeModes.None;
+        [SerializeField] private bool forceLaserHidden;
+        [SerializeField] private bool visionOsDisabled = true;
+        [SerializeField] private InputActionReference pressActionRef;
 
         public bool AllowExternalPressInput { get; set; }
         public bool ExternalPressInputValue { get; set; }
@@ -57,8 +63,8 @@ namespace Wacki
 
                 _enabled = value;
                 _locked = false;
-                _hitPoint.SetActive(value && !m_ForceLaserHidden);
-                _pointer.SetActive(value && !m_ForceLaserHidden);
+                _hitPoint.SetActive(value && !forceLaserHidden);
+                _pointer.SetActive(value && !forceLaserHidden);
 
                 if (value)
                 {
@@ -83,7 +89,7 @@ namespace Wacki
                     Initialize();
                 }
 
-                _pointer.GetComponent<MeshRenderer>().enabled = value && !m_ForceLaserHidden;
+                _pointer.GetComponent<MeshRenderer>().enabled = value && !forceLaserHidden;
             }
         }
 
@@ -101,57 +107,43 @@ namespace Wacki
 
         private void Awake()
         {
-            if (!m_AutoInitialize) return;
+            if (autoInitializeMode == AutoInitializeModes.None) return;
 
-            Initialize(m_LaserMaterial);
-
-            if (m_PressAction != null && !m_PressAction.enabled)
-            {
-                SetInputActionEnabled(true);
-                _inputReading = true;
-            }
+            Initialize();
+            SetInputActionEnabled(true);
         }
 
         private void SetInputActionEnabled(bool inputEnabled)
         {
-            if (ShouldBypass) return;
+            if (ShouldBypass || pressActionRef == null) return;
 
             if (inputEnabled)
             {
-                m_PressAction?.Enable();
+                pressActionRef.action?.Enable();
             }
             else
             {
-                m_PressAction?.Disable();
+                pressActionRef.action?.Disable();
             }
+
+            _inputReading = inputEnabled;
         }
 
         private void OnEnable()
         {
             SetInputActionEnabled(true);
-            _inputReading = true;
             _locked = false;
         }
 
         private void OnDisable()
         {
             SetInputActionEnabled(false);
-            _inputReading = false;
             _locked = false;
         }
 
         private void OnApplicationPause(bool pause)
         {
             _locked = false;
-        }
-
-        public void InitializeInput()
-        {
-            if (m_PressAction == null) return;
-
-            if (ShouldBypass) return;
-            m_PressAction.started += c => _inputPressed = true;
-            m_PressAction.canceled += c => _inputPressed = false;
         }
 
         public void GetPositionAndRotation(out Vector3 position, out Quaternion rotation)
@@ -161,45 +153,42 @@ namespace Wacki
             rotation = transform1.rotation;
         }
 
-        public void Initialize(Material newMaterial = null)
+        public void Initialize()
         {
             if (_initialized) return;
 
             _pointer = GameObject.CreatePrimitive(PrimitiveType.Cube);
             _pointer.transform.SetParent(transform, false);
-            _pointer.transform.localScale = new Vector3(m_LaserThickness, m_LaserThickness, 100.0f);
+            _pointer.transform.localScale = new Vector3(laserThickness, laserThickness, 100.0f);
             _pointer.transform.localPosition = new Vector3(0.0f, 0.0f, 50.0f);
 
             _hitPoint = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             _hitPoint.transform.SetParent(transform, false);
-            _hitPoint.transform.localScale = new Vector3(m_LaserHitScale, m_LaserHitScale, m_LaserHitScale);
+            _hitPoint.transform.localScale = new Vector3(laserHitScale, laserHitScale, laserHitScale);
             _hitPoint.transform.localPosition = new Vector3(0.0f, 0.0f, 100.0f);
-
             _hitPoint.SetActive(false);
 
             // remove the colliders on our primitives
             Destroy(_hitPoint.GetComponent<SphereCollider>());
             Destroy(_pointer.GetComponent<BoxCollider>());
 
-            if (newMaterial == null)
-            {
-                var shader = Shader.Find("Universal Render Pipeline/Unlit");
-                if (shader == null)
-                {
-                    Debug.LogError("The Shader Unlit was not found. using Lit instead.");
-                    shader = Shader.Find("Universal Render Pipeline/Lit");
-                }
+            _pointer.GetComponent<MeshRenderer>().sharedMaterial = laserMaterial;
+            _hitPoint.GetComponent<MeshRenderer>().sharedMaterial = laserMaterial;
 
-                newMaterial = new Material(shader);
-                newMaterial.SetColor("_BaseColor", m_Color);
+            if (pressActionRef != null && !ShouldBypass)
+            {
+                var action = pressActionRef.action;
+                if (!action.enabled)
+                    action.Enable();
+                
+                action.started += _ => _inputPressed = true;
+                action.canceled += _ => _inputPressed = false;
             }
 
-            _pointer.GetComponent<MeshRenderer>().sharedMaterial = newMaterial;
-            _hitPoint.GetComponent<MeshRenderer>().sharedMaterial = newMaterial;
-
-            InitializeInput();
-
             _initialized = true;
+
+            if (autoInitializeMode == AutoInitializeModes.InitAndHide)
+                SetActive(false);
         }
 
         public void SetActive(bool isActive)
@@ -243,7 +232,7 @@ namespace Wacki
                 bHit = true;
             }
 
-            _pointer.transform.localScale = new Vector3(m_LaserThickness, m_LaserThickness, distance);
+            _pointer.transform.localScale = new Vector3(laserThickness, laserThickness, distance);
             _pointer.transform.localPosition = new Vector3(0.0f, 0.0f, distance * 0.5f);
 
             if (bHit)
@@ -289,7 +278,7 @@ namespace Wacki
         public bool ButtonDown()
         {
             if (ShouldBypass) return false;
-            
+
             bool isPressed = _inputPressed;
 
             if (AllowExternalPressInput && _inputReading)
@@ -304,7 +293,7 @@ namespace Wacki
         public bool ButtonUp()
         {
             if (ShouldBypass) return false;
-            
+
             bool isUp = !_inputPressed;
 
             if (AllowExternalPressInput && _inputReading)
